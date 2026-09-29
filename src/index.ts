@@ -294,12 +294,6 @@ function rasterize(bitmap: ImageBitmap, size: Size): ImageData {
 
 async function toast(text: string, autoHideMs?: number): Promise<void> {
   const token = ++toastToken;
-  await issue({
-    type: "command:dom:remove-floating-element",
-    driverId,
-    requestId: rid(),
-    req: { domId: TOAST_ID },
-  });
   const size = unwrap(
     await issue({
       type: "command:dom:window-size",
@@ -307,16 +301,16 @@ async function toast(text: string, autoHideMs?: number): Promise<void> {
       requestId: rid(),
     }),
   );
+  const position = {
+    x: Math.round(size.width / 2 - TOAST_WIDTH / 2),
+    y: 16,
+  };
+  const schema = toastSchema(text);
   await issue({
-    type: "command:dom:create-floating-element",
+    type: "command:dom:upsert-floating-element",
     driverId,
     requestId: rid(),
-    req: {
-      domId: TOAST_ID,
-      position: { x: Math.round(size.width / 2 - TOAST_WIDTH / 2), y: 16 },
-      asPopover: false,
-      schema: toastSchema(text),
-    },
+    req: { domId: TOAST_ID, position, asPopover: false, schema },
   });
   if (autoHideMs !== undefined) {
     setTimeout(() => {
