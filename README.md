@@ -12,12 +12,4 @@ a pinned SHA-256 before a session is created. The worker has an opaque origin,
 so the download cannot be cached across page loads; the model is fetched once
 per session and reused for every image.
 
-## Scripts
 
-```bash
-npm install --no-workspaces
-npm run typecheck
-npm test                                   # pure pipeline tests
-BG_REMOVER_MODEL=/path/to/u2netp.onnx npm test   # + end-to-end model test
-npm run build                              # dist/drawdy-background-remover.drawdyx
-```
