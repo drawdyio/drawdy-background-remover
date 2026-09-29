@@ -24,36 +24,15 @@ const MODEL_INPUT_NAME = "input.1";
 const MAX_SIDE = 4096;
 
 const RESULT_GAP = 40;
-const MENU_ROOT = "background-remover";
+const MENU_ID = "background-remover";
 const TOAST_ID = "background-remover:toast";
 const TOAST_WIDTH = 360;
 
-type ModelKind = "fast" | "quality";
-type ModelSpec = {
-  url: string;
-  sha256: string;
-  label: string;
-  sizeMb: number;
+const MODEL = {
+  url: "https://huggingface.co/tomjackson2023/rembg/resolve/main/u2netp.onnx",
+  sha256: "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8",
+  sizeMb: 5,
 };
-
-const MODELS: Record<ModelKind, ModelSpec> = {
-  fast: {
-    url: "https://huggingface.co/tomjackson2023/rembg/resolve/main/u2netp.onnx",
-    sha256: "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8",
-    label: "Fast",
-    sizeMb: 5,
-  },
-  quality: {
-    url: "https://huggingface.co/tomjackson2023/rembg/resolve/main/silueta.onnx",
-    sha256: "75da6c8d2f8096ec743d071951be73b4a8bc7b3e51d9a6625d63644f90ffeedb",
-    label: "Best quality",
-    sizeMb: 44,
-  },
-};
-const KINDS: ModelKind[] = ["fast", "quality"];
-const menuIdOf = (kind: ModelKind): string => `${MENU_ROOT}:${kind}`;
-const kindOfMenu = (menuId: string): ModelKind | null =>
-  KINDS.find((kind) => menuIdOf(kind) === menuId) ?? null;
 
 let issue: DriverCommandIssuer;
 let driverId: string;
@@ -62,7 +41,7 @@ let seq = 0;
 let generateId: () => string = () => "";
 const rid = (): string => String(seq++);
 
-const sessions = new Map<ModelKind, Promise<InferenceSession>>();
+let sessionPromise: Promise<InferenceSession> | null = null;
 let ortLoaded = false;
 let toastToken = 0;
 
@@ -82,22 +61,16 @@ export const activate: DriverModule["activate"] = async (ctx) => {
     driverId,
     requestId: rid(),
     req: {
-      menuId: MENU_ROOT,
+      menuId: MENU_ID,
       menuTitle: "Remove background",
-      children: KINDS.map((kind) => ({
-        menuId: menuIdOf(kind),
-        menuTitle: `${MODELS[kind].label} (${MODELS[kind].sizeMb} MB model)`,
-      })),
     },
   });
-  for (const kind of KINDS) {
-    await issue({
-      type: "subscription:context-menu:clicked",
-      driverId,
-      requestId: rid(),
-      req: { menuId: menuIdOf(kind) },
-    });
-  }
+  await issue({
+    type: "subscription:context-menu:clicked",
+    driverId,
+    requestId: rid(),
+    req: { menuId: MENU_ID },
+  });
   await issue({
     type: "subscription:dom:theme-changed",
     driverId,
@@ -111,19 +84,18 @@ export const onEvent: DriverModule["onEvent"] = async (event) => {
     return;
   }
   if (event.type === "subscription:context-menu:clicked") {
-    const kind = kindOfMenu(event.body.menuId);
-    if (kind) enqueue(() => run(kind));
+    if (event.body.menuId === MENU_ID) enqueue(run);
   }
 };
 
-async function run(kind: ModelKind): Promise<void> {
+async function run(): Promise<void> {
   const imageIds = await selectedImageIds();
   if (imageIds.length === 0) {
     await toast("Select an image first", 2500);
     return;
   }
   try {
-    const session = await ensureSession(kind);
+    const session = await ensureSession();
     for (let i = 0; i < imageIds.length; i++) {
       const progress =
         imageIds.length > 1 ? ` (${i + 1}/${imageIds.length})` : "";
@@ -162,24 +134,24 @@ async function selectedImageIds(): Promise<string[]> {
     .map((el) => el.id);
 }
 
-function ensureSession(kind: ModelKind): Promise<InferenceSession> {
-  const cached = sessions.get(kind);
-  if (cached) return cached;
-  const created = createSession(kind);
-  sessions.set(kind, created);
-  created.catch(() => sessions.delete(kind));
+function ensureSession(): Promise<InferenceSession> {
+  if (sessionPromise) return sessionPromise;
+  const created = createSession();
+  sessionPromise = created;
+  created.catch(() => {
+    if (sessionPromise === created) sessionPromise = null;
+  });
   return created;
 }
 
-async function createSession(kind: ModelKind): Promise<InferenceSession> {
-  const spec = MODELS[kind];
+async function createSession(): Promise<InferenceSession> {
   loadOrt();
-  const bytes = await download(spec, (percent) =>
-    toast(`Loading ${spec.label} model (${spec.sizeMb} MB)… ${percent}%`),
+  const bytes = await download(MODEL.url, (percent) =>
+    toast(`Loading model (${MODEL.sizeMb} MB)… ${percent}%`),
   );
-  await toast(`Verifying ${spec.label} model…`);
-  await verify(bytes, spec.sha256);
-  await toast(`Preparing ${spec.label} model…`);
+  await toast("Verifying model…");
+  await verify(bytes, MODEL.sha256);
+  await toast("Preparing model…");
   return ort.InferenceSession.create(bytes, {
     executionProviders: ["wasm"],
     graphOptimizationLevel: "all",
@@ -195,11 +167,11 @@ function loadOrt(): void {
 }
 
 async function download(
-  spec: ModelSpec,
+  url: string,
   onProgress: (percent: number) => Promise<void>,
 ): Promise<Uint8Array<ArrayBuffer>> {
   await onProgress(0);
-  const res = await fetch(spec.url);
+  const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`model download failed (HTTP ${res.status})`);
   }
