@@ -4,9 +4,9 @@ Select one or more images, right-click, and choose
 **Remove background**. Segmentation runs inside the driver worker on ONNX
 Runtime Web's WebAssembly backend; no pixels leave the browser.
 
-![example](selecting.png)
+![example](https://github.com/drawdyio/drawdy-background-remover/blob/main/selecting.png?raw=true)
 
-![example2](done.png)
+![example2](https://github.com/drawdyio/drawdy-background-remover/blob/main/done.png?raw=true)
 
 
 ## Model
